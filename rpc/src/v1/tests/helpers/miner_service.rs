@@ -309,6 +309,10 @@ impl MinerService for TestMinerService {
 		0x5208.into()
 	}
 
+	fn increase_time(&self, _increase: U256) -> U256 {
+		0.into()
+	}
+
 	fn set_minimal_gas_price(&self, gas_price: U256) -> Result<bool, &str> {
 		let mut new_price = self.min_gas_price.write();
 		match *new_price {

@@ -74,6 +74,8 @@ pub enum Api {
 	ParitySet,
 	/// SecretStore (UNSAFE: arbitrary hash signing)
 	SecretStore,
+	/// Evm (Unsafe)
+	Evm,
 	/// Geth-compatible (best-effort) debug API (Potentially UNSAFE)
 	/// NOTE We don't aim to support all methods, only the ones that are useful.
 	Debug,
@@ -92,6 +94,7 @@ impl FromStr for Api {
 		match s {
 			"debug" => Ok(Debug),
 			"eth" => Ok(Eth),
+			"evm" => Ok(Evm),
 			"net" => Ok(Net),
 			"parity" => Ok(Parity),
 			"parity_accounts" => Ok(ParityAccounts),
@@ -175,6 +178,7 @@ fn to_modules(apis: &HashSet<Api>) -> BTreeMap<String, String> {
 		let (name, version) = match *api {
 			Api::Debug => ("debug", "1.0"),
 			Api::Eth => ("eth", "1.0"),
+			Api::Evm => ("evm", "1.0"),
 			Api::EthPubSub => ("pubsub", "1.0"),
 			Api::Net => ("net", "1.0"),
 			Api::Parity => ("parity", "1.0"),
@@ -321,6 +325,9 @@ impl FullDependencies {
 
 						add_signing_methods!(EthSigning, handler, self, (&dispatcher, &account_signer));
 					}
+				}
+				Api::Evm => {
+					handler.extend_with(EvmClient::new(&self.miner).to_delegate());
 				}
 				Api::EthPubSub => {
 					if !for_generic_pubsub {
@@ -536,6 +543,9 @@ impl<C: LightChainClient + 'static> LightDependencies<C> {
 				Api::Net => {
 					handler.extend_with(light::NetClient::new(self.sync.clone()).to_delegate());
 				}
+				Api::Evm => {
+					//empty
+				}
 				Api::Eth => {
 					let client = light::EthClient::new(
 						self.sync.clone(),
@@ -553,7 +563,7 @@ impl<C: LightChainClient + 'static> LightDependencies<C> {
 						handler.extend_with(EthFilter::to_delegate(client));
 						add_signing_methods!(EthSigning, handler, self, (&dispatcher, &account_signer));
 					}
-				}
+				},
 				Api::EthPubSub => {
 					let receiver = self.transaction_queue.write().pending_transactions_receiver();
 
@@ -703,6 +713,7 @@ impl ApiSet {
 			Api::Web3,
 			Api::Net,
 			Api::Eth,
+			Api::Evm,
 			Api::EthPubSub,
 			Api::Parity,
 			Api::Rpc,
@@ -744,6 +755,7 @@ impl ApiSet {
 			}
 			ApiSet::PubSub => [
 				Api::Eth,
+				Api::Evm,
 				Api::Parity,
 				Api::ParityAccounts,
 				Api::ParitySet,
@@ -767,6 +779,7 @@ mod test {
 		assert_eq!(Api::Web3, "web3".parse().unwrap());
 		assert_eq!(Api::Net, "net".parse().unwrap());
 		assert_eq!(Api::Eth, "eth".parse().unwrap());
+		assert_eq!(Api::Evm, "evm".parse().unwrap());
 		assert_eq!(Api::EthPubSub, "pubsub".parse().unwrap());
 		assert_eq!(Api::Personal, "personal".parse().unwrap());
 		assert_eq!(Api::Signer, "signer".parse().unwrap());
@@ -798,18 +811,8 @@ mod test {
 	fn test_api_set_unsafe_context() {
 		let expected = vec![
 			// make sure this list contains only SAFE methods
-			Api::Web3,
-			Api::Net,
-			Api::Eth,
-			Api::EthPubSub,
-			Api::Parity,
-			Api::ParityPubSub,
-			Api::Traces,
-			Api::Rpc,
-			Api::Private,
-			Api::ParityTransactionsPool,
-		].into_iter()
-		.collect();
+			Api::Web3, Api::Net, Api::Eth, Api::EthPubSub, Api::Parity, Api::ParityPubSub, Api::Traces, Api::Rpc, Api::Whisper, Api::WhisperPubSub, Api::Private,
+		].into_iter().collect();
 		assert_eq!(ApiSet::UnsafeContext.list_apis(), expected);
 	}
 
@@ -817,16 +820,7 @@ mod test {
 	fn test_api_set_ipc_context() {
 		let expected = vec![
 			// safe
-			Api::Web3,
-			Api::Net,
-			Api::Eth,
-			Api::EthPubSub,
-			Api::Parity,
-			Api::ParityPubSub,
-			Api::Traces,
-			Api::Rpc,
-			Api::Private,
-			Api::ParityTransactionsPool,
+			Api::Web3, Api::Net, Api::Eth, Api::EthPubSub, Api::Parity, Api::ParityPubSub, Api::Traces, Api::Rpc, Api::Whisper, Api::WhisperPubSub, Api::Private,
 			// semi-safe
 			Api::ParityAccounts,
 		].into_iter()
@@ -835,79 +829,44 @@ mod test {
 	}
 
 	#[test]
+	fn test_api_set_safe_context() {
+		let expected = vec![
+			// safe
+			Api::Web3, Api::Net, Api::Eth, Api::EthPubSub, Api::Parity, Api::ParityPubSub, Api::Traces, Api::Rpc, Api::SecretStore, Api::Whisper, Api::WhisperPubSub, Api::Private,
+			// semi-safe
+			Api::ParityAccounts,
+			// Unsafe
+			Api::ParitySet, Api::Signer, Api::Debug
+		].into_iter().collect();
+		assert_eq!(ApiSet::SafeContext.list_apis(), expected);
+	}
+
+	#[test]
 	fn test_all_apis() {
-		assert_eq!(
-			"all".parse::<ApiSet>().unwrap(),
-			ApiSet::List(
-				vec![
-					Api::Web3,
-					Api::Net,
-					Api::Eth,
-					Api::EthPubSub,
-					Api::Parity,
-					Api::ParityPubSub,
-					Api::Traces,
-					Api::Rpc,
-					Api::SecretStore,
-					Api::ParityAccounts,
-					Api::ParitySet,
-					Api::Signer,
-					Api::Personal,
-					Api::Private,
-					Api::Debug,
-					Api::ParityTransactionsPool,
-				].into_iter()
-				.collect()
-			)
-		);
+		assert_eq!("all".parse::<ApiSet>().unwrap(), ApiSet::List(vec![
+			Api::Web3, Api::Net, Api::Eth, Api::EthPubSub, Api::Parity, Api::ParityPubSub, Api::Traces, Api::Rpc, Api::SecretStore, Api::Whisper, Api::WhisperPubSub,
+			Api::ParityAccounts,
+			Api::ParitySet, Api::Signer,
+			Api::Personal,
+			Api::Private,
+			Api::Debug,
+		].into_iter().collect()));
 	}
 
 	#[test]
 	fn test_all_without_personal_apis() {
-		assert_eq!(
-			"personal,all,-personal".parse::<ApiSet>().unwrap(),
-			ApiSet::List(
-				vec![
-					Api::Web3,
-					Api::Net,
-					Api::Eth,
-					Api::EthPubSub,
-					Api::Parity,
-					Api::ParityPubSub,
-					Api::Traces,
-					Api::Rpc,
-					Api::SecretStore,
-					Api::ParityAccounts,
-					Api::ParitySet,
-					Api::Signer,
-					Api::Private,
-					Api::Debug,
-					Api::ParityTransactionsPool,
-				].into_iter()
-				.collect()
-			)
-		);
+		assert_eq!("personal,all,-personal".parse::<ApiSet>().unwrap(), ApiSet::List(vec![
+			Api::Web3, Api::Net, Api::Eth, Api::EthPubSub, Api::Parity, Api::ParityPubSub, Api::Traces, Api::Rpc, Api::SecretStore, Api::Whisper, Api::WhisperPubSub,
+			Api::ParityAccounts,
+			Api::ParitySet, Api::Signer,
+			Api::Private, Api::Debug,
+		].into_iter().collect()));
 	}
 
 	#[test]
 	fn test_safe_parsing() {
-		assert_eq!(
-			"safe".parse::<ApiSet>().unwrap(),
-			ApiSet::List(
-				vec![
-					Api::Web3,
-					Api::Net,
-					Api::Eth,
-					Api::EthPubSub,
-					Api::Parity,
-					Api::ParityPubSub,
-					Api::Traces,
-					Api::Rpc,
-					Api::Private,
-					Api::ParityTransactionsPool,
-				].into_iter()
-				.collect()
-			)
-		);
+		assert_eq!("safe".parse::<ApiSet>().unwrap(), ApiSet::List(vec![
+			Api::Web3, Api::Net, Api::Eth, Api::EthPubSub, Api::Parity, Api::ParityPubSub, Api::Traces, Api::Rpc, Api::Whisper, Api::WhisperPubSub, Api::Private,
+		].into_iter().collect()));
 	}
 }

@@ -410,6 +410,9 @@ pub trait Engine: Sync + Send {
 	fn min_gas_limit(&self) -> U256 {
 		self.params().min_gas_limit
 	}
+
+	/// Whether this engine allows block time stamp increase
+	fn is_time_increasable(&self) -> bool { false }
 }
 
 /// Verifier for all blocks within an epoch with self-contained state.

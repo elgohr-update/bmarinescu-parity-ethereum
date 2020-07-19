@@ -18,6 +18,7 @@
 
 mod debug;
 mod eth;
+mod evm;
 mod eth_filter;
 mod eth_pubsub;
 mod net;
@@ -43,6 +44,7 @@ pub mod light;
 
 pub use self::debug::DebugClient;
 pub use self::eth::{EthClient, EthClientOptions};
+pub use self::evm::EvmClient;
 pub use self::eth_filter::EthFilterClient;
 pub use self::eth_pubsub::EthPubSubClient;
 pub use self::transactions_pool::TransactionsPoolClient;

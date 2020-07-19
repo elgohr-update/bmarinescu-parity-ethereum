@@ -15,7 +15,7 @@
 // along with Open Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp;
-use std::time::{Instant, Duration};
+use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
@@ -258,6 +258,7 @@ pub struct Miner {
 	accounts: Arc<dyn LocalAccounts>,
 	io_channel: RwLock<Option<IoChannel<ClientIoMessage<Client>>>>,
 	service_transaction_checker: Option<ServiceTransactionChecker>,
+	increase_time: RwLock<u64>,
 }
 
 impl Miner {
@@ -320,6 +321,7 @@ impl Miner {
 			} else {
 				Some(ServiceTransactionChecker::default())
 			},
+			increase_time: RwLock::new(0),
 		}
 	}
 
@@ -482,6 +484,12 @@ impl Miner {
 
 		if self.options.infinite_pending_block {
 			open_block.remove_gas_limit();
+		}
+
+		if self.engine.is_time_increasable() {
+			let increase_time = self.increase_time.read();
+			let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+			open_block.set_timestamp(now + *increase_time );
 		}
 
 		let mut invalid_transactions = HashSet::new();
@@ -1470,6 +1478,12 @@ impl miner::MinerService for Miner {
 
 	fn pending_transactions(&self, latest_block_number: BlockNumber) -> Option<Vec<SignedTransaction>> {
 		self.map_existing_pending_block(|b| b.transactions.iter().cloned().collect(), latest_block_number)
+	}
+
+	fn increase_time(&self, increase: U256) -> U256 {
+		let mut increase_time = self.increase_time.write();
+		*increase_time += increase.low_u64();
+		U256::from(*increase_time)
 	}
 }
 

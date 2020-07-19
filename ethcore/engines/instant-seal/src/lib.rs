@@ -120,6 +120,8 @@ impl Engine for InstantSeal {
 		self.machine.params()
 	}
 
+	fn is_time_increasable(&self) -> bool { true }
+
 }
 
 
